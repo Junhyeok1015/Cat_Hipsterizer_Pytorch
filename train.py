@@ -1,11 +1,24 @@
+import time
 import keras, datetime
 from keras.layers import Input, Dense
 from keras.models import Model
-from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau
-from keras.applications import mobilenetv2
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
+from keras.applications import MobileNetV2
 import numpy as np
+from dataload import *
+from model import *
+from utils import *
 
-img_size = 224
+# switch to PyTorch
+# TensorBoard -> replace with neptune
+import torch
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+checkpoint = None # path to model checkpoint, None if none
+# img_size = 224
+start_time = datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+workers = 4
 
 mode = 'bbs' # [bbs, lmks]
 if mode is 'bbs':
@@ -13,50 +26,103 @@ if mode is 'bbs':
 elif mode is 'lmks':
   output_size = 18
 
-start_time = datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+def main():
+  """
+  Training
+  """
+  # global start_epoch, epoch, checkpoint
+  global checkpoint, output_size
 
-data_00 = np.load('dataset/CAT_00.npy')
-data_01 = np.load('dataset/CAT_01.npy')
-data_02 = np.load('dataset/CAT_02.npy')
-data_03 = np.load('dataset/CAT_03.npy')
-data_04 = np.load('dataset/CAT_04.npy')
-data_05 = np.load('dataset/CAT_05.npy')
-data_06 = np.load('dataset/CAT_06.npy')
+  # Initialize model or load checkpoint
+  if checkpoint is None:
+    # starting from 0
+    start_epoch = 0
+    # define new model # 모델에 만들기!
+    model = cat_hipsterizer_model(output_size)
+    # define optimizer ###################### 옵티마이저 짜기!
+    optimizer = torch.optim.Adam(model.parameters(), lr = 0.001 )
+    # print("4325924593495")
+  else:
+    checkpoint = torch.load(checkpoint)
+    start_epoch = checkpoint['epoch'] + 1
+    print("\nLoaded checkpoint from epoch %d.\n" % start_epoch)
+    model = checkpoint['model']
+    optimizer = checkpoint['optimizer']
+  
+  # Move to default device
+  model = model.to(device)
+  criterion = torch.nn.MSELoss()
 
-x_train = np.concatenate((data_00.item().get('imgs'), data_01.item().get('imgs'), data_02.item().get('imgs'), data_03.item().get('imgs'), data_04.item().get('imgs'), data_05.item().get('imgs')), axis=0)
-y_train = np.concatenate((data_00.item().get(mode), data_01.item().get(mode), data_02.item().get(mode), data_03.item().get(mode), data_04.item().get(mode), data_05.item().get(mode)), axis=0)
+  #dataset load from dataload.py
+  train_dataset = get_train_dataset()
+  test_dataset = get_test_dataset()
 
-x_test = np.array(data_06.item().get('imgs'))
-y_test = np.array(data_06.item().get(mode))
+  print(train_dataset)
 
-x_train = x_train.astype('float32') / 255.
-x_test = x_test.astype('float32') / 255.
-x_train = np.reshape(x_train, (-1, img_size, img_size, 3))
-x_test = np.reshape(x_test, (-1, img_size, img_size, 3))
+  training_epoch = 50
 
-y_train = np.reshape(y_train, (-1, output_size))
-y_test = np.reshape(y_test, (-1, output_size))
+  print(start_epoch, training_epoch)
 
-inputs = Input(shape=(img_size, img_size, 3))
+  # Training Model
+  for epoch in range(start_epoch, training_epoch):
+        print("Training!")
+        
+        # One epoch's training
+        train(train_loader = train_dataset,
+        model=model,
+        criterion=criterion,
+        optimizer=optimizer,
+        epoch = epoch)
 
-mobilenetv2_model = mobilenetv2.MobileNetV2(input_shape=(img_size, img_size, 3), alpha=1.0, depth_multiplier=1, include_top=False, weights='imagenet', input_tensor=inputs, pooling='max')
+        # Save checkpoint
+        save_checkpoint_bbs(epoch, model, optimizer)
 
-net = Dense(128, activation='relu')(mobilenetv2_model.layers[-1].output)
-net = Dense(64, activation='relu')(net)
-net = Dense(output_size, activation='linear')(net)
+def train(train_loader, model, criterion, optimizer, epoch):
+      """
+      One epoch's training
+      """
 
-model = Model(inputs=inputs, outputs=net)
+      model.train() # training mode enables dropout
+      total_batch = len(train_loader)
 
-model.summary()
+      start = time.time()
+      avg_cost = 0
 
-# training
-model.compile(optimizer=keras.optimizers.Adam(), loss='mse')
+      # Batches
+      for i, (X, Y) in enumerate(train_loader):
+            # Move to default device
+            X = X.to(device)
+            Y = Y.to(device)
 
-model.fit(x_train, y_train, epochs=50, batch_size=32, shuffle=True,
-  validation_data=(x_test, y_test), verbose=1,
-  callbacks=[
-    TensorBoard(log_dir='logs/%s' % (start_time)),
-    ModelCheckpoint('./models/%s.h5' % (start_time), monitor='val_loss', verbose=1, save_best_only=True, mode='auto'),
-    ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1, mode='auto')
-  ]
-)
+            # Forward prop
+            hypothesis = model(X)
+
+            # Loss
+            loss = criterion(hypothesis, Y)
+
+            # Backward prop.
+            optimizer.zero_grad()
+            loss.backward()
+
+            optimizer.step()
+
+            avg_cost += loss/total_batch
+
+            # Print Status
+            print("Epoch: [{0}][{1}/{2}]\t"
+            "Loss {3:.4f}\t".format(epoch, i, len(train_loader), avg_cost))
+
+
+  # # training
+  # model.compile(optimizer=keras.optimizers.Adam(), loss='mse')
+
+  # model.fit(x_train, y_train, epochs=50, batch_size=32, shuffle=True,
+  #   validation_data=(x_test, y_test), verbose=1,
+  #   callbacks=[
+  #     TensorBoard(log_dir='logs/%s' % (start_time)),
+  #     ModelCheckpoint('./models/%s.h5' % (start_time), monitor='val_loss', verbose=1, save_best_only=True, mode='auto'),
+  #     ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1, mode='auto')
+  #   ]
+  # 
+if __name__ == '__main__':
+  main()
