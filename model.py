@@ -45,6 +45,7 @@ class cat_hipsterizer_model(torch.nn.Module):
         self.fc3 = torch.nn.Linear(64, num_output, bias = True)
 
         self.activation = torch.nn.ReLU()
+        self.metric = 0 # used for learning rate policy 'plateau'
 
         torch.nn.init.xavier_normal_(self.fc1.weight)
         torch.nn.init.xavier_normal_(self.fc2.weight)

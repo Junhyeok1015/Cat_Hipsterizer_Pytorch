@@ -112,17 +112,5 @@ def train(train_loader, model, criterion, optimizer, epoch):
             print("Epoch: [{0}][{1}/{2}]\t"
             "Loss {3:.4f}\t".format(epoch, i, len(train_loader), avg_cost))
 
-
-  # # training
-  # model.compile(optimizer=keras.optimizers.Adam(), loss='mse')
-
-  # model.fit(x_train, y_train, epochs=50, batch_size=32, shuffle=True,
-  #   validation_data=(x_test, y_test), verbose=1,
-  #   callbacks=[
-  #     TensorBoard(log_dir='logs/%s' % (start_time)),
-  #     ModelCheckpoint('./models/%s.h5' % (start_time), monitor='val_loss', verbose=1, save_best_only=True, mode='auto'),
-  #     ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1, mode='auto')
-  #   ]
-  # 
 if __name__ == '__main__':
   main()

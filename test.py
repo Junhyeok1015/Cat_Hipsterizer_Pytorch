@@ -11,10 +11,10 @@ file_list = sorted(os.listdir(base_path))
 # this is most important thing
 glasses = cv2.imread('images/glasses.png', cv2.IMREAD_UNCHANGED)
 
-bbs_model_name = sys.argv[1]
-lmks_model_name = sys.argv[2]
-bbs_model = load_model(bbs_model_name)
-lmks_model = load_model(lmks_model_name)
+# bbs_model_name = sys.argv[1]
+# lmks_model_name = sys.argv[2]
+bbs_model = load_model('models/bbs_1.h5')
+lmks_model = load_model('models/lmks_1.h5')
 
 def resize_img(im):
   old_size = im.shape[:2] # old_size is in (height, width) format
@@ -76,6 +76,8 @@ for f in file_list:
 
   inputs = (img.astype('float32') / 255).reshape((1, img_size, img_size, 3))
   pred_bb = bbs_model.predict(inputs)[0].reshape((-1, 2))
+
+  import pdb; pdb.set_trace()
 
   # compute bounding box of original image
   ori_bb = ((pred_bb - np.array([left, top])) / ratio).astype(np.int)
